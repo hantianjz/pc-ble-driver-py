@@ -56,7 +56,7 @@ elif py3:
         print(py_version_old_message)
         sys.exit(-1)
 
-    requirements = ['wrapt', 'future']
+    requirements = ['wrapt', 'future', 'ecdsa']
 else:
     print(py_version_old_message)
     sys.exit(-1)

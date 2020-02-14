@@ -132,7 +132,18 @@ class BLEDriverObserver(object):
             "evt> passkey_display conn({}) passkey({})\n".format(
                 conn_handle, passkey
             )
+
         )
+
+    def on_gap_evt_lesc_dhkey_request(self, ble_driver, conn_handle, p_pk_peer):
+        logger.debug(
+            "evt> lesc_dhkey_request conn({}) p_pk_peer({})\n".format(
+                conn_handle,p_pk_peer 
+            )
+
+        )
+
+
 
     def on_gap_evt_conn_param_update_request(
         self, ble_driver, conn_handle, conn_params
