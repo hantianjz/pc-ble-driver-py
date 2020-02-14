@@ -624,6 +624,35 @@ class BLEGapSecKDist(object):
         return "enc({0.enc}) id({0.id}) sign({0.sign}) link({0.link})".format(self)
 
 
+class BLEGapLESCp256pk(object):
+    def __init__(self, pk):
+        self.pk = pk
+
+    @classmethod
+    def from_c(cls, params):
+        return cls(pk = util.uint8_array_to_list(params.pk, 64))
+
+    def to_c(self):
+        params = driver.ble_gap_lesc_p256_pk_t()
+        self.pk_array = util.list_to_uint8_array(self.pk)
+        params.pk = self.pk_array.cast()
+        return params
+
+class BLEGapLESCdhkey(object):
+    def __init__(self, key):
+        self.key = key
+
+    @classmethod
+    def from_c(cls, params):
+        return cls(key = util.uint8_array_to_list(params.key, 32))
+
+    def to_c(self):
+        params = driver.ble_gap_lesc_dhkey_t()
+        self.key_array = util.list_to_uint8_array(self.key)
+        params.key = self.key_array.cast()
+        return params
+
+
 class BLEGapSecParams(object):
     def __init__(
         self,
@@ -1997,15 +2026,12 @@ class BLEDriver(object):
         assert isinstance(
             sec_params, (BLEGapSecParams, type(None))
         ), "Invalid argument type"
-        assert isinstance(own_keys, type(None)), "NOT IMPLEMENTED"
+        # assert isinstance(own_keys, type(None)), "NOT IMPLEMENTED"
         assert isinstance(peer_keys, type(None)), "NOT IMPLEMENTED"
 
         keyset = driver.ble_gap_sec_keyset_t()
 
-        keyset.keys_own.p_enc_key = driver.ble_gap_enc_key_t()
-        keyset.keys_own.p_id_key = driver.ble_gap_id_key_t()
-        keyset.keys_own.p_sign_key = driver.ble_gap_sign_info_t()
-        keyset.keys_own.p_pk = driver.ble_gap_lesc_p256_pk_t()
+        keyset.keys_own = own_keys
 
         keyset.keys_peer.p_enc_key = driver.ble_gap_enc_key_t()
         keyset.keys_peer.p_id_key = driver.ble_gap_id_key_t()
@@ -2215,6 +2241,21 @@ class BLEDriver(object):
         hvx_params = hvx_params.to_c()
         return driver.sd_ble_gatts_hvx(self.rpc_adapter, conn_handle, hvx_params)
 
+    @NordicSemiErrorCheck
+    @wrapt.synchronized(api_lock)
+    def ble_gap_lesc_dhkey_reply(self, conn_handle, dhkey):
+        return driver.sd_ble_gap_lesc_dhkey_reply(self.rpc_adapter,
+                                                  conn_handle,
+                                                  dhkey.to_c())
+
+    @NordicSemiErrorCheck
+    @wrapt.synchronized(api_lock)
+    def ble_gap_auth_key_reply(self, conn_handle, key_type, p_key):
+        return driver.sd_ble_gap_auth_key_reply(self.rpc_adapter,
+                                                  conn_handle,
+                                                  key_type,
+                                                  p_key)
+
     # IMPORTANT: Python annotations on callbacks make the reference count
     # IMPORTANT: for the object become zero in the binding. This makes the
     # IMPORTANT: interpreter crash since it tries to garbage collect
@@ -2388,6 +2429,14 @@ class BLEDriver(object):
                         conn_handle=ble_event.evt.gap_evt.conn_handle,
                         passkey=passkey.passkey
                     )
+            elif evt_id == BLEEvtID.gap_evt_lesc_dhkey_request:
+                lesc_dhkey_request_evt = ble_event.evt.gap_evt.params.lesc_dhkey_request
+
+                for obs in self.observers:
+                    obs.on_gap_evt_lesc_dhkey_request(ble_driver  = self,
+                                                      conn_handle = ble_event.evt.gap_evt.conn_handle,
+                                                      p_pk_peer   = BLEGapLESCp256pk.from_c(lesc_dhkey_request_evt.p_pk_peer))
+
             elif evt_id == BLEEvtID.gap_evt_timeout:
                 timeout_evt = ble_event.evt.gap_evt.params.timeout
                 try:
