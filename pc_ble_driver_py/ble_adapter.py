@@ -43,6 +43,7 @@ from threading import Condition
 import logging
 
 from pc_ble_driver_py.ble_driver import *
+import pc_ble_driver_py.ble_driver_types as util
 from pc_ble_driver_py.exceptions import NordicSemiException
 from pc_ble_driver_py.observers import *
 
@@ -571,8 +572,11 @@ class BLEAdapter(BLEDriverObserver):
             kdist_peer=kdist_peer,
         )
 
+        logger.debug("sec_params: %s", sec_params)
         self.driver.ble_gap_authenticate(conn_handle, sec_params)
-        self.evt_sync[conn_handle].wait(evt=BLEEvtID.gap_evt_sec_params_request, timeout=10)
+        result = self.evt_sync[conn_handle].wait(evt=BLEEvtID.gap_evt_sec_params_request, timeout=10)
+        peer_sec_params = result["peer_params"]
+        logger.debug("peer_sec_params: %s", peer_sec_params)
 
 
         # sd_ble_gap_sec_params_reply ... In the central role, sec_params must be set to NULL,
@@ -583,26 +587,56 @@ class BLEAdapter(BLEDriverObserver):
             if self.db_conns[conn_handle].role == BLEGapRoles.central
             else sec_params
         )
-        if lesc:
+        if True or lesc:
           # Create own gap sec keys
           keys_own = driver.ble_gap_sec_keys_t()
           keys_own.p_enc_key = driver.ble_gap_enc_key_t()
           keys_own.p_id_key = driver.ble_gap_id_key_t()
           keys_own.p_sign_key = driver.ble_gap_sign_info_t()
-          keys_own.p_pk = BLEGapLESCp256pk(pk = self.ecc_create_keys()).to_c() if lesc else None
+          # keys_own.p_pk = BLEGapLESCp256pk(pk = self.ecc_create_keys()).to_c() if peer_sec_params.lesc else driver.ble_gap_lesc_p256_pk_t()
+          keys_own.p_pk = driver.ble_gap_lesc_p256_pk_t()
 
           self.driver.ble_gap_sec_params_reply(
               conn_handle, BLEGapSecStatus.success, sec_params,
-              own_keys=keys_own, peer_keys=None
+              own_keys=None, peer_keys=None
           )
 
-          result = self.evt_sync[conn_handle].wait(evt = BLEEvtID.gap_evt_lesc_dhkey_request)
-          #Get shared secret
-          if not result or not "p_pk_peer" in result:
+          # if peer_sec_params.lesc:
+          #   result = self.evt_sync[conn_handle].wait(evt = BLEEvtID.gap_evt_lesc_dhkey_request)
+          if peer_sec_params.mitm:
+            result = self.evt_sync[conn_handle].wait(evt = BLEEvtID.gap_evt_auth_key_request)
+          logger.debug("--result--: %s", result)
+          dhkey = None
+          key_type = None
+          if result:
+            # Check auth_status
+            if "auth_status" in result:
+                if result["auth_status"] == BLEGapSecStatus.success and self.driver._keyset:
+                    self.db_conns[conn_handle]._keyset = BLEGapSecKeyset.from_c(
+                        self.driver._keyset
+                    )
+                return result["auth_status"]
+            #Get shared secret
+            if "p_pk_peer" in result:
+                dhkey = BLEGapLESCdhkey(key = self.ecc_get_dhkey(result['p_pk_peer'].pk))
+            if "key_type" in result:
+                key_type = result['key_type']
+          else:
+              logger.warning("Empty gap_evt_lesc_dhkey_request result: %s", result)
               return None
-          dhkey = BLEGapLESCdhkey(key = self.ecc_get_dhkey(result['p_pk_peer'].pk))
 
-          self.driver.ble_gap_lesc_dhkey_reply(conn_handle, dhkey)
+          if peer_sec_params.mitm:
+              # result = self.evt_sync[conn_handle].wait(evt = BLEEvtID.gap_evt_passkey_display)
+              # logger.debug("---gap_evt_passkey_display--- result: %s", result)
+              # response = input('PASSKEY: ' + ''.join([str(x-48) for x in result['passkey']]) + '\ny/n: ')
+              passkey = list(map(ord, "000000"))
+              logger.warning("---passkey----: %s", passkey)
+              self.driver.ble_gap_auth_key_reply(conn_handle, 1, util.list_to_uint8_array(passkey).cast())
+
+          if dhkey:
+            logger.info("reply dhkey")
+            self.driver.ble_gap_lesc_dhkey_reply(conn_handle, dhkey)
+
         else:
           self.driver.ble_gap_sec_params_reply(
               conn_handle, BLEGapSecStatus.success, sec_params
@@ -611,10 +645,11 @@ class BLEAdapter(BLEDriverObserver):
         result = self.evt_sync[conn_handle].wait(evt=BLEEvtID.gap_evt_auth_status)
 
         # If success then keys are stored in self.driver._keyset.
-        if result and "auth_status" in result and result["auth_status"] == BLEGapSecStatus.success:
-            self.db_conns[conn_handle]._keyset = BLEGapSecKeyset.from_c(
-                self.driver._keyset
-            )
+        if result and "auth_status" in result:
+            if result["auth_status"] == BLEGapSecStatus.success:
+                self.db_conns[conn_handle]._keyset = BLEGapSecKeyset.from_c(
+                    self.driver._keyset
+                )
             return result["auth_status"]
 
         return None
@@ -661,9 +696,6 @@ class BLEAdapter(BLEDriverObserver):
 
     def on_gap_evt_lesc_dhkey_request(self, ble_driver, conn_handle, **kwargs):
         self.evt_sync[conn_handle].notify(evt = BLEEvtID.gap_evt_lesc_dhkey_request, data = kwargs)
-
-    def on_gap_evt_passkey_display(self, ble_driver, conn_handle, **kwargs):
-        self.evt_sync[conn_handle].notify(evt = BLEEvtID.gap_evt_passkey_display, data = kwargs)
 
     def on_gap_evt_sec_info_request(self, ble_driver, conn_handle, **kwargs):
         self.evt_sync[conn_handle].notify(
