@@ -615,10 +615,19 @@ class BLEAdapter(BLEDriverObserver):
           )
 
           result = self.evt_sync[conn_handle].wait(evt = BLEEvtID.gap_evt_lesc_dhkey_request)
-          #Get shared secret
-          if not result or not "p_pk_peer" in result:
+          if result:
+            if "auth_status" in result:
+              if result["auth_status"] == BLEGapSecStatus.success:
+                self.db_conns[conn_handle]._keyset = BLEGapSecKeyset.from_c(
+                    self.driver._keyset
+                )
+              return result["auth_status"]
+            elif "p_pk_peer" in result:
+              dhkey = BLEGapLESCdhkey(key = self.ecc_get_dhkey(result['p_pk_peer'].pk))
+            else:
               return None
-          dhkey = BLEGapLESCdhkey(key = self.ecc_get_dhkey(result['p_pk_peer'].pk))
+          else:
+            return None
 
           self.driver.ble_gap_lesc_dhkey_reply(conn_handle, dhkey)
         else:
