@@ -591,6 +591,11 @@ class BLEAdapter(BLEDriverObserver):
 
         self.driver.ble_gap_authenticate(conn_handle, sec_params)
         self.evt_sync[conn_handle].wait(evt=BLEEvtID.gap_evt_sec_params_request, timeout=10)
+        if not result:
+          raise NordicSemiException("authenticate: Sec param request timeout")
+
+        if conn_handle not in self.db_conns:
+          raise NordicSemiException("authenticate: Connection no longer valid.")
 
 
         # sd_ble_gap_sec_params_reply ... In the central role, sec_params must be set to NULL,
