@@ -602,6 +602,7 @@ class BLEAdapter(BLEDriverObserver):
             else sec_params
         )
         if lesc:
+          logger.debug("lesc flag set, create dhkey.")
           # Create own gap sec keys
           keys_own = driver.ble_gap_sec_keys_t()
           keys_own.p_enc_key = driver.ble_gap_enc_key_t()
@@ -621,14 +622,16 @@ class BLEAdapter(BLEDriverObserver):
                 self.db_conns[conn_handle]._keyset = BLEGapSecKeyset.from_c(
                     self.driver._keyset
                 )
+              logger.info("auth_status(%s)", result["auth_status"])
               return result["auth_status"]
             elif "p_pk_peer" in result:
               dhkey = BLEGapLESCdhkey(key = self.ecc_get_dhkey(result['p_pk_peer'].pk))
             else:
-              return None
+              raise NordicSemiException("authenticate: Unexpected event({})", result)
           else:
-            return None
+            raise NordicSemiException("authenticate: Wait for lesc dhkey request timeout")
 
+          logger.debug("Send dhkey reply.")
           self.driver.ble_gap_lesc_dhkey_reply(conn_handle, dhkey)
         else:
           self.driver.ble_gap_sec_params_reply(
@@ -642,9 +645,10 @@ class BLEAdapter(BLEDriverObserver):
             self.db_conns[conn_handle]._keyset = BLEGapSecKeyset.from_c(
                 self.driver._keyset
             )
+            logger.info("auth_status(%s), bonded(%d)", result["auth_status"], result["bonded"])
             return result["auth_status"]
 
-        return None
+        raise NordicSemiException("authenticate: Unexpected result({})", result)
 
 
     def encrypt(self, conn_handle, ediv, rand, ltk, auth=0, lesc=0, ltk_len=16):
