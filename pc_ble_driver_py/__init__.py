@@ -39,4 +39,4 @@ Package marker file.
 
 """
 
-__version__ = "0.14.2-lesc"
+__version__ = "0.14.2-lesc.2"

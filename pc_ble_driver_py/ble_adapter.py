@@ -571,6 +571,7 @@ class BLEAdapter(BLEDriverObserver):
         id_peer=False,
         sign_peer=False,
         link_peer=False,
+        timeout=5,
     ):
         kdist_own = BLEGapSecKDist(enc=enc_own, id=id_own, sign=sign_own, link=link_own)
         kdist_peer = BLEGapSecKDist(
@@ -588,9 +589,8 @@ class BLEAdapter(BLEDriverObserver):
             kdist_own=kdist_own,
             kdist_peer=kdist_peer,
         )
-
         self.driver.ble_gap_authenticate(conn_handle, sec_params)
-        self.evt_sync[conn_handle].wait(evt=BLEEvtID.gap_evt_sec_params_request, timeout=10)
+        result = self.evt_sync[conn_handle].wait(evt=BLEEvtID.gap_evt_sec_params_request, timeout=timeout)
         if not result:
           raise NordicSemiException("authenticate: Sec param request timeout")
 
@@ -620,7 +620,7 @@ class BLEAdapter(BLEDriverObserver):
               own_keys=keys_own, peer_keys=None
           )
 
-          result = self.evt_sync[conn_handle].wait(evt = BLEEvtID.gap_evt_lesc_dhkey_request)
+          result = self.evt_sync[conn_handle].wait(evt = BLEEvtID.gap_evt_lesc_dhkey_request, timeout=timeout)
           if result:
             if "auth_status" in result:
               if result["auth_status"] == BLEGapSecStatus.success:
@@ -632,7 +632,7 @@ class BLEAdapter(BLEDriverObserver):
             elif "p_pk_peer" in result:
               dhkey = BLEGapLESCdhkey(key = self.ecc_get_dhkey(result['p_pk_peer'].pk))
             else:
-              raise NordicSemiException("authenticate: Unexpected event({})", result)
+              raise NordicSemiException("authenticate: Unexpected event({})".format(result))
           else:
             raise NordicSemiException("authenticate: Wait for lesc dhkey request timeout")
 
@@ -643,7 +643,7 @@ class BLEAdapter(BLEDriverObserver):
               conn_handle, BLEGapSecStatus.success, sec_params
           )
 
-        result = self.evt_sync[conn_handle].wait(evt=BLEEvtID.gap_evt_auth_status)
+        result = self.evt_sync[conn_handle].wait(evt=BLEEvtID.gap_evt_auth_status, timeout=timeout)
 
         # If success then keys are stored in self.driver._keyset.
         if result and "auth_status" in result and result["auth_status"] == BLEGapSecStatus.success:
@@ -653,7 +653,7 @@ class BLEAdapter(BLEDriverObserver):
             logger.info("auth_status(%s), bonded(%d)", result["auth_status"], result["bonded"])
             return result["auth_status"]
 
-        raise NordicSemiException("authenticate: Unexpected result({})", result)
+        raise NordicSemiException("authenticate: Unexpected result({})".format(result))
 
 
     def encrypt(self, conn_handle, ediv, rand, ltk, auth=0, lesc=0, ltk_len=16):
